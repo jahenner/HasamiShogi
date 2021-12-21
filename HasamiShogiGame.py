@@ -100,7 +100,7 @@ class HasamiShogiGame:
 
         # If the move is possible, make it and check for captured pieces and update the game
         if self._board.move(from_rank, from_file, to_rank, to_file):
-            self._capture_pieces(self._board.occupant(to_rank, to_file))
+            self._board.capture_pieces(self._board.occupant(to_rank, to_file))
             self._update_game()
             return True
 
@@ -110,12 +110,190 @@ class HasamiShogiGame:
         """allows the ai to make a move in the game"""
         self._board.ai_move(from_location, to_location)
         # location is given from 1-9, so need to subtract 1 for preprocessing
-        self._capture_pieces(self._board.occupant(*[location - 1 for location in to_location.get_location()]))
+        self._board.capture_pieces(self._board.occupant(*[location - 1 for location in to_location.get_location()]))
         self._update_game()
+
+    def _update_game(self) -> None:
+        """Checks for a winner of the game and changes whose turn it is"""
+        # change whose turn it is
+        opponent = self._active_players[(self._active_players.index(self._active_player) + 1) % 2]
+        # determining winner
+        if self.get_num_captured_pieces(opponent) >= 8:
+            if self._active_player == self._active_players[0]:
+                self._game_state = self._game_states[2]
+            else:
+                self._game_state = self._game_states[1]
+        elif self.get_num_captured_pieces(self._active_player) >= 8:
+            if opponent == self._active_players[0]:
+                self._game_state = self._game_states[2]
+            else:
+                self._game_state = self._game_states[1]
+
+        # set whose turn it is
+        self._active_player = opponent
+
+    def get_square_occupant(self, position: str) -> str:
+        """Returns the piece that is located at the position entered"""
+        rank = self._rank.find(position[0])         # look through the ranks and change letter to int position
+        file = 9 - int(position[1])                 # board is flipped horizontally
+        return self._board.occupant(rank, file).get_piece()
+
+    def get_board(self) -> 'Board':
+        """Returns the board object"""
+        return self._board
+
+
+class Board:
+    """Creates a board object that is 9x9 Square objects"""
+    def __init__(self,
+                 win: Union["Surface", "SurfaceType"],
+                 board: str = 'RRRRRRRRR/9/9/9/9/9/9/9/BBBBBBBBB'):
+        """initializes the board as nested lists and calls method to create the board"""
+        self._board: List[List[Square]] = []
+        self._rows = 9
+        self._cols = 9
+        self._buffer = 20
+        self._top_gap = win.get_height() - win.get_width() + self._buffer       # Helping to make a square after gap
+        self._width = win.get_width() - self._buffer
+        self._height = win.get_height() - self._top_gap
+        self._gap = (self._width - 2 * self._buffer) // self._cols
+        self.create_board()
+        self.set_board(board)
+
+    def get_board(self):
+        """returns board"""
+        return self._board
+
+    def get_buffer(self):
+        """returns buffer"""
+        return self._buffer
+
+    def get_gap(self):
+        """returns gap (length of square space)"""
+        return self._gap
+
+    def get_top_gap(self):
+        """Returns the height of gap at top of screen"""
+        return self._top_gap
+
+    @staticmethod
+    def convert_location(location: str) -> tuple[int, int]:
+        """converts from string location to int"""
+        ranks = "abcdefghi"
+        rank = ranks.find(location[0])
+        file = 9 - int(location[1])
+        return rank, file
+
+    def deselect_square(self, location: str) -> None:
+        """deselects the square"""
+        rank, file = self.convert_location(location)
+        self.occupant(rank, file).set_selected(False)
+
+    def select_square(self, location: str) -> None:
+        """selects the square"""
+        rank, file = self.convert_location(location)
+        self.occupant(rank, file).set_selected(True)
+
+    def refresh_possible(self):
+        """changes all is possible values back to false"""
+        for rank in self._board:
+            for square in rank:
+                square.set_is_possible(False)
+
+    def get_player_locations(self, player: str) -> List['Square']:
+        """Gets red locations for the AI"""
+        pieces = []
+        for row in self._board:
+            for el in row:
+                if el.get_piece() == player:
+                    pieces.append(el)
+        return pieces
+
+    def create_board(self) -> None:
+        """Creates the board by creating 9x9 Square objects and connects them all. It also places the initial pieces"""
+
+        # iterate over all Squares and connect them to top and left squares and assign starting position values
+        for rank in range(1, 10):
+            self._board.append([])
+            for file in range(1, 10):
+                if rank == 1:               # a
+                    top = None
+                else:
+                    top = self._board[rank-2][file-1]
+
+                if file == 1:               # left
+                    left = None
+                else:
+                    left = self._board[rank-1][file-2]
+
+                self._board[rank-1].append(Square("NONE", top, left, rank, file, self._gap, self._top_gap, self._buffer))
+
+        # reiterate over the squares and connect them to the bottom and right squares
+        for rank in range(9):
+            for file in range(9):
+                if rank == 8:
+                    bottom = None
+                else:
+                    bottom = self._board[rank+1][file]
+
+                if file == 8:
+                    right = None
+                else:
+                    right = self._board[rank][file+1]
+                self._board[rank][file].set_bottom_and_right(bottom, right)
+
+    def set_board(self, board: str) -> None:
+        """sets pieces onto board using FEN"""
+        rows = board.split('/')
+        for rank in range(len(self._board)):
+            file = 0
+            for char in rows[rank]:
+                if char == 'R':
+                    self._board[rank][file].set_piece("RED")
+                    file += 1
+                elif char == 'B':
+                    self._board[rank][file].set_piece("BLACK")
+                    file += 1
+                else:
+                    file += int(char)
+
+    def print_board(self) -> None:
+        """Pretty prints the board with tiles for NONE Squares and row and column indices"""
+        print("   ", end='')
+        for num in range(9, 0, -1):
+            print(num, end=(8 - len(str(num)))*" ")
+        print()
+        letters = "abcdefghi"
+        for rank in range(9):
+            for file in range(9):
+                piece = self._board[rank][file].get_piece()
+                if piece == "NONE":
+                    piece = "|_____|"
+                else:
+                    piece = "|" + (5 - len(piece))//2 * '_' + piece + (5 - len(piece))//2 * '_' + "|"
+                print(piece, end=(8 - len(piece))*" ")
+
+            print(letters[rank])
+
+    def count_pieces(self) -> Dict[str, int]:
+        """Goes through all of the Square Objects on the board and counts how many pieces the player has left"""
+        pieces: Dict[str, int] = {'BLACK': 0, 'RED': 0}
+
+        for rank in range(9):
+            for file in range(9):
+                curr_piece = self._board[rank][file].get_piece()
+                pieces[curr_piece] = pieces.get(curr_piece, 0) + 1
+
+        pieces.pop("NONE")
+        return pieces
+
+    def occupant(self, rank: int, file: int) -> 'Square':
+        """returns the Square Object that is on the rank and file location"""
+        return self._board[rank][file]
 
     def possible_moves(self, location):
         """Checks what the possible moves are of the the current selection"""
-        curr_square = self._board.occupant(*self._board.convert_location(location))
+        curr_square = self.occupant(*self.convert_location(location))
         directions: List[Callable] = [Square.get_right, Square.get_bottom, Square.get_left, Square.get_top]
 
         # Crawl in all 4 directions
@@ -132,17 +310,17 @@ class HasamiShogiGame:
             else:
                 piece.set_is_possible(True)
 
-    def _capture_pieces(self, piece: 'Square') -> None:
+    def capture_pieces(self, piece: 'Square') -> None:
         """
         Goes in all 4 directions of the moved piece to check for capture, corners, and if moved piece captures self
         """
 
         directions: List[Callable] = [Square.get_right, Square.get_bottom, Square.get_left, Square.get_top]
         corners: List['Square'] = [
-            self._board.occupant(0, 0),
-            self._board.occupant(0, 8),
-            self._board.occupant(8, 8),
-            self._board.occupant(8, 0)]
+            self.occupant(0, 0),
+            self.occupant(0, 8),
+            self.occupant(8, 8),
+            self.occupant(8, 0)]
 
         # Check all 4 directions for capture
         for func in directions:
@@ -214,196 +392,6 @@ class HasamiShogiGame:
         for piece in captured_pieces:
             piece.set_piece("NONE")
 
-    def _update_game(self) -> None:
-        """Checks for a winner of the game and changes whose turn it is"""
-        # change whose turn it is
-        opponent = self._active_players[(self._active_players.index(self._active_player) + 1) % 2]
-        # determining winner
-        if self.get_num_captured_pieces(opponent) >= 8:
-            if self._active_player == self._active_players[0]:
-                self._game_state = self._game_states[2]
-            else:
-                self._game_state = self._game_states[1]
-        elif self.get_num_captured_pieces(self._active_player) >= 8:
-            if opponent == self._active_players[0]:
-                self._game_state = self._game_states[2]
-            else:
-                self._game_state = self._game_states[1]
-
-        # set whose turn it is
-        self._active_player = opponent
-
-    def get_square_occupant(self, position: str) -> str:
-        """Returns the piece that is located at the position entered"""
-        rank = self._rank.find(position[0])         # look through the ranks and change letter to int position
-        file = 9 - int(position[1])                 # board is flipped horizontally
-        return self._board.occupant(rank, file).get_piece()
-
-    def get_board(self) -> 'Board':
-        """Returns the board object"""
-        return self._board
-
-    def ai_possible_moves(self, location) -> List[Any]:
-        """Checks what the possible moves are of the the current selection"""
-        directions: List[Callable] = [Square.get_right, Square.get_bottom, Square.get_left, Square.get_top]
-        possible_moves = []
-        for func in directions:
-            curr_moves = self._ai_possible_move_helper(location, func)
-            # check to see if possible moves were found in that direction
-            if curr_moves:
-                possible_moves.extend(curr_moves)
-        return [location, possible_moves]
-
-    @staticmethod
-    def _ai_possible_move_helper(piece: 'Square', direction: Callable) -> List['Square']:
-        """Sets all possible squares to True"""
-        possibles = []
-        while direction(piece):
-            piece = direction(piece)
-            # if we find a piece in the way go and return what we have found if any
-            if piece.get_piece() != "NONE":
-                return possibles
-            else:
-                possibles.append(piece)
-        return possibles
-
-
-class Board:
-    """Creates a board object that is 9x9 Square objects"""
-    def __init__(self, win: Union["Surface", "SurfaceType"]):
-        """initializes the board as nested lists and calls method to create the board"""
-        self._board: List[List[Square]] = []
-        self._rows = 9
-        self._cols = 9
-        self._buffer = 20
-        self._top_gap = win.get_height() - win.get_width() + self._buffer       # Helping to make a square after gap
-        self._width = win.get_width() - self._buffer
-        self._height = win.get_height() - self._top_gap
-        self._gap = (self._width - 2 * self._buffer) // self._cols
-        self.create_board()
-
-    def get_board(self):
-        """returns board"""
-        return self._board
-
-    def get_buffer(self):
-        """returns buffer"""
-        return self._buffer
-
-    def get_gap(self):
-        """returns gap (length of square space)"""
-        return self._gap
-
-    def get_top_gap(self):
-        """Returns the height of gap at top of screen"""
-        return self._top_gap
-
-    @staticmethod
-    def convert_location(location: str) -> tuple[int, int]:
-        """converts from string location to int"""
-        ranks = "abcdefghi"
-        rank = ranks.find(location[0])
-        file = 9 - int(location[1])
-        return rank, file
-
-    def deselect_square(self, location: str) -> None:
-        """deselects the square"""
-        rank, file = self.convert_location(location)
-        self.occupant(rank, file).set_selected(False)
-
-    def select_square(self, location: str) -> None:
-        """selects the square"""
-        rank, file = self.convert_location(location)
-        self.occupant(rank, file).set_selected(True)
-
-    def refresh_possible(self):
-        """changes all is possible values back to false"""
-        for rank in self._board:
-            for square in rank:
-                square.set_is_possible(False)
-
-    def get_red_locations(self) -> List['Square']:
-        """Gets red locations for the AI"""
-        reds = []
-        for row in self._board:
-            for el in row:
-                if el.get_piece() == 'RED':
-                    reds.append(el)
-        return reds
-
-    def create_board(self) -> None:
-        """Creates the board by creating 9x9 Square objects and connects them all. It also places the initial pieces"""
-        pieces = ["RED", "BLACK", "NONE"]
-
-        # iterate over all Squares and connect them to top and left squares and assign starting position values
-        for rank in range(1, 10):
-            self._board.append([])
-            for file in range(1, 10):
-                piece = pieces[2]           # None
-                if rank == 1:               # a
-                    piece = pieces[0]       # Red
-                    top = None
-                else:
-                    top = self._board[rank-2][file-1]
-
-                if rank == 9:               # i
-                    piece = pieces[1]
-
-                if file == 1:               # left
-                    left = None
-                else:
-                    left = self._board[rank-1][file-2]
-
-                self._board[rank-1].append(Square(piece, top, left, rank, file, self._gap, self._top_gap, self._buffer))
-
-        # reiterate over the squares and connect them to the bottom and right squares
-        for rank in range(9):
-            for file in range(9):
-                if rank == 8:
-                    bottom = None
-                else:
-                    bottom = self._board[rank+1][file]
-
-                if file == 8:
-                    right = None
-                else:
-                    right = self._board[rank][file+1]
-                self._board[rank][file].set_bottom_and_right(bottom, right)
-
-    def print_board(self) -> None:
-        """Pretty prints the board with tiles for NONE Squares and row and column indices"""
-        print("   ", end='')
-        for num in range(9, 0, -1):
-            print(num, end=(8 - len(str(num)))*" ")
-        print()
-        letters = "abcdefghi"
-        for rank in range(9):
-            for file in range(9):
-                piece = self._board[rank][file].get_piece()
-                if piece == "NONE":
-                    piece = "|_____|"
-                else:
-                    piece = "|" + (5 - len(piece))//2 * '_' + piece + (5 - len(piece))//2 * '_' + "|"
-                print(piece, end=(8 - len(piece))*" ")
-
-            print(letters[rank])
-
-    def count_pieces(self) -> Dict[str, int]:
-        """Goes through all of the Square Objects on the board and counts how many pieces the player has left"""
-        pieces: Dict[str, int] = {'BLACK': 0, 'RED': 0}
-
-        for rank in range(9):
-            for file in range(9):
-                curr_piece = self._board[rank][file].get_piece()
-                pieces[curr_piece] = pieces.get(curr_piece, 0) + 1
-
-        pieces.pop("NONE")
-        return pieces
-
-    def occupant(self, rank: int, file: int) -> 'Square':
-        """returns the Square Object that is on the rank and file location"""
-        return self._board[rank][file]
-
     def move(self, from_rank: int, from_file: int, to_rank: int, to_file: int) -> bool:
         """
         Determines the direction the piece is trying to move and the distance it wants to travel.
@@ -451,6 +439,51 @@ class Board:
                 return False
 
         return True
+
+    def ai_possible_moves(self, location) -> List[Any]:
+        """Checks what the possible moves are of the the current selection"""
+        directions: List[Callable] = [Square.get_right, Square.get_bottom, Square.get_left, Square.get_top]
+        possible_moves = []
+        for func in directions:
+            curr_moves = self._ai_possible_move_helper(location, func)
+            # check to see if possible moves were found in that direction
+            if curr_moves:
+                possible_moves.extend(curr_moves)
+        return [location, possible_moves]
+
+    @staticmethod
+    def _ai_possible_move_helper(piece: 'Square', direction: Callable) -> List['Square']:
+        """Sets all possible squares to True"""
+        possibles = []
+        while direction(piece):
+            piece = direction(piece)
+            # if we find a piece in the way go and return what we have found if any
+            if piece.get_piece() != "NONE":
+                return possibles
+            else:
+                possibles.append(piece)
+        return possibles
+
+    def generate_fen(self) -> str:
+        """generates FEN representation of the board"""
+        fen = ""
+        for rank in range(len(self._board)):
+            count = 0
+            for file in range(len(self._board[rank])):
+                if self._board[rank][file].get_piece() == "RED":
+                    if count != 0:
+                        fen += str(count)
+                        count = 0
+                    fen += 'R'
+                elif self._board[rank][file].get_piece() == "BLACK":
+                    if count != 0:
+                        fen += str(count)
+                        count = 0
+                    fen += 'B'
+                else:
+                    count += 1
+            fen += '/'
+        return fen[:-1]
 
     def draw(self, win):
         """Draws the board onto the screen"""
@@ -608,34 +641,45 @@ class Square:
 
 class AI:
     """Creates an AI object to play against"""
-    def __init__(self):
+    def __init__(self, win:  Union["Surface", "SurfaceType"], game: 'HasamiShogiGame', player: str):
         self._curr_pieces = []
         self._curr_moves = []
+        self._win = win
+        self._game = game
+        self._player = player
 
-    def set_curr_pieces(self, board: Board):
-        """Gives AI current pieces to be able to move"""
-        self._curr_pieces = board.get_red_locations()
+    # def set_curr_pieces(self):
+    #     """Gives AI current pieces to be able to move"""
+    #     self._curr_pieces = self._game.get_board().get_player_locations(self._player)
 
     def get_curr_pieces(self):
         """Returns the current pieces"""
         return self._curr_pieces
 
-    def set_possible_moves(self, game: HasamiShogiGame):
+    def _set_possible_moves(self, board: 'Board'):
         """Finds all possible moves for this turn"""
         self._curr_moves.clear()
         for piece in self._curr_pieces:
-            curr_possible = game.ai_possible_moves(piece)
+            curr_possible = board.ai_possible_moves(piece)
             if curr_possible[1]:
-                self._curr_moves.append(game.ai_possible_moves(piece))
+                self._curr_moves.append(board.ai_possible_moves(piece))
 
     def get_possible_moves(self):
         """returns possible moves"""
         return self._curr_moves
 
-    def pick_move(self) -> Tuple['Square', 'Square']:
+    def pick_move(self, board: 'Board') -> Tuple['Square', 'Square']:
         """Picks a move for the AI to play"""
+        self._curr_pieces = board.get_player_locations(self._player)
+        self._set_possible_moves(board)
+
         rand_move = self._curr_moves[random.randint(0, len(self._curr_moves)-1) if len(self._curr_moves) > 1 else 0]
         return rand_move[0], (rand_move[1][random.randint(0, len(rand_move[1])-1)] if len(rand_move[1]) > 1 else rand_move[1][0])
+
+    def minimax(self, board: str, position: List[List[int]], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
+        """TODO"""
+        curr_board = Board(self._win, board)
+
 
 
 def top_bar(win: Union["Surface", "SurfaceType"], game: HasamiShogiGame) -> None:
@@ -802,7 +846,7 @@ def play_game(win, selection) -> None:
     game = HasamiShogiGame(win)
     from_piece = None
     if selection == 0:      # if 1 player was selected
-        ai = AI()
+        ai = AI(win, game, "RED")
     while True:
 
         for event in pg.event.get():
@@ -824,7 +868,7 @@ def play_game(win, selection) -> None:
                         from_piece = location                       # Place clicked is the from location
                         game.set_initiate_move(False)               # change to piece has been selected to move
                         game.get_board().select_square(location)    # Change the display of the clicked square
-                        game.possible_moves(location)               # Change display of possible squares
+                        game.get_board().possible_moves(location)               # Change display of possible squares
 
                     # Check if this is the second click and the click is in a possible move.
                     # Also if the same square is clicked twice
@@ -834,17 +878,17 @@ def play_game(win, selection) -> None:
                         game.get_board().refresh_possible()             # remove display update to possibles
                         from_piece = None                               # Change from piece to not holding anything
                         game.set_initiate_move(True)                    # Change back to 1st click
+                        print(game.get_board().generate_fen())
 
             # It is the AI's turn
             else:
-                ai.set_curr_pieces(game.get_board())
-                ai.set_possible_moves(game)
-                print("Possible moves:")
+                from_location, to_location = ai.pick_move(game.get_board())
+                print("Possible Moves:")
                 for possible in ai.get_possible_moves():
                     print(f'From: {possible[0].get_location()} \t To: {[location.get_location() for location in possible[1]]}')
-                from_location, to_location = ai.pick_move()
                 print(f'Selection: {from_location.get_location(), to_location.get_location()}')
                 game.ai_make_move(from_location, to_location)
+                print(game.get_board().generate_fen())
 
         window_update(win, game)
         pg.display.update()
