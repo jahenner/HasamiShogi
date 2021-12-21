@@ -303,6 +303,7 @@ class Board:
         pieces_score = 0
         opponent_locations = []
         pieces = self.count_pieces()
+        # print(f'pieces: {pieces}')
         previous_pieces = board.count_pieces()
         if len(pieces) == 1:
             if player in pieces:
@@ -312,14 +313,12 @@ class Board:
         for key in pieces:
             if key == player:
                 if pieces[key] == 1:
-                    print('bad')
                     return -100
-                pieces_score += (previous_pieces[key] - pieces[key]) * 3
+                pieces_score -= (previous_pieces[key] - pieces[key]) * 5
             else:
                 if pieces[key] == 1:
-                    print('good')
                     return 100
-                pieces_score -= (previous_pieces[key] - pieces[key]) * 3
+                pieces_score += (previous_pieces[key] - pieces[key]) * 5
                 opponent_locations = self.get_player_locations(key)
                 opponent_pieces = pieces[key]
         locations = self.get_player_locations(player)
@@ -699,6 +698,7 @@ class AI:
         self._game = game
         self._player = player
         self._opponent = "BLACK" if self._player == "RED" else "RED"
+        self._board = None
 
     @staticmethod
     def _set_possible_moves(board: 'Board', curr_pieces: List['Square']) -> List[List[Any]]:
@@ -712,6 +712,7 @@ class AI:
 
     def pick_move(self, board: 'Board') -> Tuple['Square', 'Square']:
         """Picks a move for the AI to play"""
+        self._board = board
         curr_pieces = board.get_player_locations(self._player)
         curr_moves = self._set_possible_moves(board, curr_pieces)
         rand_move = curr_moves[random.randint(0, len(curr_moves)-1) if len(curr_moves) > 1 else 0]
@@ -720,7 +721,6 @@ class AI:
         for moves in curr_moves:
             start = moves[0]
             for end in moves[1]:
-                # print(f'Checking from: {start.get_location()}\tto: {end.get_location()}')
                 eval = self.minimax(board.generate_fen(), [start, end], 1, -1000, 1000, True)
                 if eval > max_score:
                     max_score = eval
@@ -733,11 +733,10 @@ class AI:
         from_rank, from_file = position[0].get_location()
         to_rank, to_file = position[1].get_location()
         curr_board.ai_move(curr_board.occupant(from_rank-1, from_file-1), curr_board.occupant(to_rank-1, to_file-1))
-        curr_board.capture_pieces(position[1])
-        # curr_board.print_board()
+        curr_board.capture_pieces(curr_board.occupant(to_rank-1, to_file-1))
 
         if depth == 0 or curr_board.won():
-            return curr_board.evaluate(self._player, Board(self._win, board))
+            return curr_board.evaluate(self._player, self._board)
 
         if maximizing_player:
             curr_pieces = curr_board.get_player_locations(self._opponent)
@@ -990,3 +989,10 @@ def play_game(win, selection) -> None:
 if __name__ == "__main__":
     title_screen()
     pg.quit()
+    # pg.init()
+    # width = 750
+    # height = 820
+    # win = pg.display.set_mode((width, height))
+    # curr = Board(win, "2RRRRRR1/1R7/9/9/9/9/9/1B5B1/R7R")
+    # print(curr.evaluate("RED", Board(win, "2RRRRRRR/1R7/9/9/9/9/9/1B5B1/RBBBBBBB1")))
+    # pg.quit()
