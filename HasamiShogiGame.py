@@ -297,17 +297,31 @@ class Board:
 
         return False
 
-    def evaluate(self, player: str) -> int:
+    def evaluate(self, player: str, board: 'Board') -> int:
         """Evaluates the state of the current board"""
+
         pieces_score = 0
         opponent_locations = []
         pieces = self.count_pieces()
+        previous_pieces = board.count_pieces()
+        if len(pieces) == 1:
+            if player in pieces:
+                return 100
+            else:
+                return -100
         for key in pieces:
             if key == player:
-                pieces_score += pieces[key]
+                if pieces[key] == 1:
+                    print('bad')
+                    return -100
+                pieces_score += (previous_pieces[key] - pieces[key]) * 3
             else:
-                pieces_score -= pieces[key]
+                if pieces[key] == 1:
+                    print('good')
+                    return 100
+                pieces_score -= (previous_pieces[key] - pieces[key]) * 3
                 opponent_locations = self.get_player_locations(key)
+                opponent_pieces = pieces[key]
         locations = self.get_player_locations(player)
         open_score = 0
         for location in locations:
@@ -318,7 +332,7 @@ class Board:
             open_score += self._left_open_pieces(location, Square.get_left, Square.get_right)
             open_score += self._left_open_pieces(location, Square.get_top, Square.get_bottom)
 
-        return open_score + pieces_score
+        return (open_score // opponent_pieces) + pieces_score
 
     def occupant(self, rank: int, file: int) -> 'Square':
         """returns the Square Object that is on the rank and file location"""
@@ -519,6 +533,8 @@ class Board:
                     fen += 'B'
                 else:
                     count += 1
+            if count > 0:
+                fen += str(count)
             fen += '/'
         return fen[:-1]
 
@@ -679,49 +695,87 @@ class Square:
 class AI:
     """Creates an AI object to play against"""
     def __init__(self, win:  Union["Surface", "SurfaceType"], game: 'HasamiShogiGame', player: str):
-        self._curr_pieces = []
-        self._curr_moves = []
         self._win = win
         self._game = game
         self._player = player
+        self._opponent = "BLACK" if self._player == "RED" else "RED"
 
-    # def set_curr_pieces(self):
-    #     """Gives AI current pieces to be able to move"""
-    #     self._curr_pieces = self._game.get_board().get_player_locations(self._player)
-
-    def get_curr_pieces(self):
-        """Returns the current pieces"""
-        return self._curr_pieces
-
-    def _set_possible_moves(self, board: 'Board'):
+    @staticmethod
+    def _set_possible_moves(board: 'Board', curr_pieces: List['Square']) -> List[List[Any]]:
         """Finds all possible moves for this turn"""
-        self._curr_moves.clear()
-        for piece in self._curr_pieces:
+        curr_moves = []
+        for piece in curr_pieces:
             curr_possible = board.ai_possible_moves(piece)
             if curr_possible[1]:
-                self._curr_moves.append(board.ai_possible_moves(piece))
-
-    def get_possible_moves(self):
-        """returns possible moves"""
-        return self._curr_moves
+                curr_moves.append(board.ai_possible_moves(piece))
+        return curr_moves
 
     def pick_move(self, board: 'Board') -> Tuple['Square', 'Square']:
         """Picks a move for the AI to play"""
-        self._curr_pieces = board.get_player_locations(self._player)
-        self._set_possible_moves(board)
+        curr_pieces = board.get_player_locations(self._player)
+        curr_moves = self._set_possible_moves(board, curr_pieces)
+        rand_move = curr_moves[random.randint(0, len(curr_moves)-1) if len(curr_moves) > 1 else 0]
+        max_score = -1000
+        best_start, best_end = rand_move[0], (rand_move[1][random.randint(0, len(rand_move[1])-1)] if len(rand_move[1]) > 1 else rand_move[1][0])
+        for moves in curr_moves:
+            start = moves[0]
+            for end in moves[1]:
+                # print(f'Checking from: {start.get_location()}\tto: {end.get_location()}')
+                eval = self.minimax(board.generate_fen(), [start, end], 1, -1000, 1000, True)
+                if eval > max_score:
+                    max_score = eval
+                    best_start, best_end = start, end
+        return best_start, best_end
 
-        rand_move = self._curr_moves[random.randint(0, len(self._curr_moves)-1) if len(self._curr_moves) > 1 else 0]
-        return rand_move[0], (rand_move[1][random.randint(0, len(rand_move[1])-1)] if len(rand_move[1]) > 1 else rand_move[1][0])
-
-    def minimax(self, board: str, position: List[List[int]], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
+    def minimax(self, board: str, position: List['Square'], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
         """TODO"""
         curr_board = Board(self._win, board)
-        curr_board.ai_move(curr_board.occupant(*position[0]), curr_board.occupant(*position[1]))
-        curr_board.capture_pieces(curr_board.occupant(*position[1]))
-        if curr_board.won():
-            return 100 if maximizing_player else -100
-        if depth == 0:
-            return curr_board.evaluate(self._player)
+        from_rank, from_file = position[0].get_location()
+        to_rank, to_file = position[1].get_location()
+        curr_board.ai_move(curr_board.occupant(from_rank-1, from_file-1), curr_board.occupant(to_rank-1, to_file-1))
+        curr_board.capture_pieces(position[1])
+        # curr_board.print_board()
+
+        if depth == 0 or curr_board.won():
+            return curr_board.evaluate(self._player, Board(self._win, board))
+
+        if maximizing_player:
+            curr_pieces = curr_board.get_player_locations(self._opponent)
+            curr_moves = self._set_possible_moves(curr_board, curr_pieces)
+            maxEval = -1000
+            flag = False
+            for moves in curr_moves:
+                start: 'Square' = moves[0]
+                for end in moves[1]:
+                    # print(f'\tMaximizing from: {start.get_location()}\tto: {end.get_location()}')
+                    eval = self.minimax(curr_board.generate_fen(), [start, end], depth-1, alpha, beta, False)
+                    maxEval = max(maxEval, eval)
+                    alpha = max(alpha, eval)
+                    if beta <= alpha:
+                        flag = True
+                        break
+                if flag:
+                    break
+            return maxEval
+        else:
+            curr_pieces = curr_board.get_player_locations(self._player)
+            curr_moves = self._set_possible_moves(curr_board, curr_pieces)
+            minEval = 1000
+            flag = False
+            for moves in curr_moves:
+                start: 'Square' = moves[0]
+                for end in moves[1]:
+                    # print(f'\tMinimizing from: {start.get_location()}\tto: {end.get_location()}')
+                    eval = self.minimax(curr_board.generate_fen(), [start, end],
+                                        depth - 1, alpha, beta, True)
+                    minEval = min(minEval, eval)
+                    beta = min(beta, eval)
+                    if beta <= alpha:
+                        flag = True
+                        break
+                if flag:
+                    break
+            return minEval
 
 
 def top_bar(win: Union["Surface", "SurfaceType"], game: HasamiShogiGame) -> None:
@@ -925,9 +979,6 @@ def play_game(win, selection) -> None:
             # It is the AI's turn
             else:
                 from_location, to_location = ai.pick_move(game.get_board())
-                print("Possible Moves:")
-                for possible in ai.get_possible_moves():
-                    print(f'From: {possible[0].get_location()} \t To: {[location.get_location() for location in possible[1]]}')
                 print(f'Selection: {from_location.get_location(), to_location.get_location()}')
                 game.ai_make_move(from_location, to_location)
                 print(game.get_board().generate_fen())
