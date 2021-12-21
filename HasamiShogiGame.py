@@ -287,6 +287,39 @@ class Board:
         pieces.pop("NONE")
         return pieces
 
+    def won(self) -> bool:
+        """checks if there is a winner"""
+        pieces = self.count_pieces()
+        if len(pieces) <= 1:
+            return True
+        if pieces['BLACK'] == 1 or pieces['RED'] == 1:
+            return True
+
+        return False
+
+    def evaluate(self, player: str) -> int:
+        """Evaluates the state of the current board"""
+        pieces_score = 0
+        opponent_locations = []
+        pieces = self.count_pieces()
+        for key in pieces:
+            if key == player:
+                pieces_score += pieces[key]
+            else:
+                pieces_score -= pieces[key]
+                opponent_locations = self.get_player_locations(key)
+        locations = self.get_player_locations(player)
+        open_score = 0
+        for location in locations:
+            open_score -= self._left_open_pieces(location, Square.get_left, Square.get_right)
+            open_score -= self._left_open_pieces(location, Square.get_top, Square.get_bottom)
+
+        for location in opponent_locations:
+            open_score += self._left_open_pieces(location, Square.get_left, Square.get_right)
+            open_score += self._left_open_pieces(location, Square.get_top, Square.get_bottom)
+
+        return open_score + pieces_score
+
     def occupant(self, rank: int, file: int) -> 'Square':
         """returns the Square Object that is on the rank and file location"""
         return self._board[rank][file]
@@ -346,30 +379,34 @@ class Board:
         if direction_1(piece).get_piece() != piece.get_piece() and direction_2(piece).get_piece() != piece.get_piece():
             piece.set_piece("NONE")
 
-    def _capture_self(self, piece: 'Square', direction_1: Callable, direction_2: Callable) -> None:
+    def _left_open_pieces(self, piece: 'Square', direction_1: Callable, direction_2: Callable) -> int:
         """If want to implement self capture, but needs to be reimplemented in _capture_pieces"""
-
+        flag = False
         captured_pieces: List['Square'] = []
         curr_piece = piece.get_piece()
         if curr_piece == 'NONE':
-            return
+            return 0
         center = piece
         while piece and piece.get_piece() == curr_piece:
             captured_pieces.append(piece)
             piece = direction_1(piece)
 
-        if not piece or piece.get_piece() == "NONE":
-            return
+        if not piece:
+            return 0
+        elif piece.get_piece() == "NONE":
+            flag = True
 
         piece = direction_2(center)
         while piece and piece.get_piece() == curr_piece:
             captured_pieces.append(piece)
             piece = direction_2(piece)
 
-        if not piece or piece.get_piece() == "NONE":
-            return
+        if not piece:
+            return 0
+        elif piece.get_piece() == "NONE" and flag:
+            return len(captured_pieces) // 2
 
-        self._update_pieces(captured_pieces)
+        return len(captured_pieces)
 
     def _capture_piece_direction(self, piece: 'Square', direction: Callable) -> None:
         """Checks if there should be captured pieces in the direction given and calls function to capture them"""
@@ -679,7 +716,12 @@ class AI:
     def minimax(self, board: str, position: List[List[int]], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
         """TODO"""
         curr_board = Board(self._win, board)
-
+        curr_board.ai_move(curr_board.occupant(*position[0]), curr_board.occupant(*position[1]))
+        curr_board.capture_pieces(curr_board.occupant(*position[1]))
+        if curr_board.won():
+            return 100 if maximizing_player else -100
+        if depth == 0:
+            return curr_board.evaluate(self._player)
 
 
 def top_bar(win: Union["Surface", "SurfaceType"], game: HasamiShogiGame) -> None:
