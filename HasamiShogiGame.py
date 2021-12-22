@@ -331,7 +331,7 @@ class Board:
             open_score += self._left_open_pieces(location, Square.get_left, Square.get_right)
             open_score += self._left_open_pieces(location, Square.get_top, Square.get_bottom)
 
-        return (open_score // opponent_pieces) + pieces_score
+        return (open_score // opponent_pieces) + pieces_score + random.randint(-3, 3)
 
     def occupant(self, rank: int, file: int) -> 'Square':
         """returns the Square Object that is on the rank and file location"""
@@ -699,6 +699,7 @@ class AI:
         self._player = player
         self._opponent = "BLACK" if self._player == "RED" else "RED"
         self._board = None
+        self._turn = 0
 
     @staticmethod
     def _set_possible_moves(board: 'Board', curr_pieces: List['Square']) -> List[List[Any]]:
@@ -712,12 +713,15 @@ class AI:
 
     def pick_move(self, board: 'Board') -> Tuple['Square', 'Square']:
         """Picks a move for the AI to play"""
+        self._turn += 1
         self._board = board
         curr_pieces = board.get_player_locations(self._player)
         curr_moves = self._set_possible_moves(board, curr_pieces)
         rand_move = curr_moves[random.randint(0, len(curr_moves)-1) if len(curr_moves) > 1 else 0]
         max_score = -1000
         best_start, best_end = rand_move[0], (rand_move[1][random.randint(0, len(rand_move[1])-1)] if len(rand_move[1]) > 1 else rand_move[1][0])
+        if self._turn < 3:
+            return best_start, best_end
         for moves in curr_moves:
             start = moves[0]
             for end in moves[1]:
@@ -866,6 +870,7 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
     color = (0, 0, 0)
     one_player = font.render("1 Player", True, color)
     two_players = font.render("2 Players", True, color)
+    ai_play = font.render("AIs play", True, color)
 
     # create green box around 1 player box
     if selection == 0:
@@ -874,22 +879,34 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
             (0, 255, 0),
             pg.Rect(
                 (win.get_width() - one_player.get_width()) // 2 - 10,
-                (win.get_height() - one_player.get_height()) // 2 - 10,
+                (win.get_height() - one_player.get_height()) // 3 - 10,
                 one_player.get_width() + 20,
                 one_player.get_height() + 20
             ),
             5
         )
     # create green box around 2 players box
-    else:
+    elif selection == 1:
         pg.draw.rect(
             win,
             (0, 255, 0),
             pg.Rect(
                 (win.get_width() - two_players.get_width()) // 2 - 10,
-                (win.get_height() + two_players.get_height() + one_player.get_height()) // 2 - 10,
+                (win.get_height() + two_players.get_height() + one_player.get_height()) // 3 - 10,
                 two_players.get_width() + 20,
                 two_players.get_height() + 20
+            ),
+            5
+        )
+    else:
+        pg.draw.rect(
+            win,
+            (0, 255, 0),
+            pg.Rect(
+                (win.get_width() - ai_play.get_width()) // 2 - 10,
+                (win.get_height() + two_players.get_height() + one_player.get_height() + ai_play.get_height()) // 3 - 10,
+                ai_play.get_width() + 20,
+                ai_play.get_height() + 20
             ),
             5
         )
@@ -898,7 +915,7 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
         one_player,
         (
             (win.get_width() - one_player.get_width()) // 2,
-            (win.get_height() - one_player.get_height()) // 2
+            (win.get_height() - one_player.get_height()) // 3
         )
     )
     # Display 2 players text
@@ -906,7 +923,15 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
         two_players,
         (
             (win.get_width() - two_players.get_width()) // 2,
-            (win.get_height() + two_players.get_height() + one_player.get_height()) // 2
+            (win.get_height() + two_players.get_height() + one_player.get_height()) // 3
+        )
+    )
+
+    win.blit(
+        ai_play,
+        (
+            (win.get_width() - ai_play.get_width()) // 2,
+            (win.get_height() + two_players.get_height() + one_player.get_height() + ai_play.get_height()) // 3
         )
     )
 
@@ -928,9 +953,9 @@ def title_screen() -> None:
             elif pg.key.get_pressed()[pg.K_SPACE]:          # space is pressed, so play game
                 play_game(win, selection)
             elif pg.key.get_pressed()[pg.K_DOWN]:           # Scrolls down, but wraps around
-                selection = (selection + 1) % 2
+                selection = (selection + 1) % 3
             elif pg.key.get_pressed()[pg.K_UP]:             # Scrolls up, but wraps around
-                selection = (selection + 1) % 2
+                selection = (selection - 1) % 3
         title_update(win, selection)
         pg.display.update()
 
@@ -940,8 +965,9 @@ def play_game(win, selection) -> None:
     random.seed("Shogi")
     game = HasamiShogiGame(win)
     from_piece = None
-    if selection == 0:      # if 1 player was selected
-        ai = AI(win, game, "RED")
+    if selection == 0 or selection == 2:      # if 1 player was selected
+        ai_red = AI(win, game, "RED")
+        ai_black = AI(win, game, "BLACK")
     while True:
 
         for event in pg.event.get():
@@ -953,7 +979,7 @@ def play_game(win, selection) -> None:
                 game = HasamiShogiGame(win)
 
             # Lets players click on pieces to move. Selection 1 means 2 players are playing
-            if game.get_active_player() == 'BLACK' or selection == 1:
+            if game.get_active_player() == 'BLACK' and (selection == 1 or selection == 0):
                 if pg.mouse.get_pressed()[0]:               # Left click
                     mouse = pg.mouse.get_pos()              # Get x and y position on screen
                     location = game.get_location(mouse)     # change position to square locations
@@ -977,10 +1003,16 @@ def play_game(win, selection) -> None:
 
             # It is the AI's turn
             else:
-                from_location, to_location = ai.pick_move(game.get_board())
-                print(f'Selection: {from_location.get_location(), to_location.get_location()}')
-                game.ai_make_move(from_location, to_location)
-                print(game.get_board().generate_fen())
+                if game.get_active_player() == "RED":
+                    from_location, to_location = ai_red.pick_move(game.get_board())
+                    print(f'Selection: {from_location.get_location(), to_location.get_location()}')
+                    game.ai_make_move(from_location, to_location)
+                    print(game.get_board().generate_fen())
+                else:
+                    from_location, to_location = ai_black.pick_move(game.get_board())
+                    print(f'Selection: {from_location.get_location(), to_location.get_location()}')
+                    game.ai_make_move(from_location, to_location)
+                    print(game.get_board().generate_fen())
 
         window_update(win, game)
         pg.display.update()
@@ -993,6 +1025,6 @@ if __name__ == "__main__":
     # width = 750
     # height = 820
     # win = pg.display.set_mode((width, height))
-    # curr = Board(win, "2RRRRRR1/1R7/9/9/9/9/9/1B5B1/R7R")
-    # print(curr.evaluate("RED", Board(win, "2RRRRRRR/1R7/9/9/9/9/9/1B5B1/RBBBBBBB1")))
+    # curr = Board(win, "9/5RRRR/RR1R1B3/4RBBB1/9/9/9/9/2R6")
+    # curr.print_board()
     # pg.quit()
