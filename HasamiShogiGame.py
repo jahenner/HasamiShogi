@@ -2,7 +2,7 @@
 # Date: 11/12/21
 # Description: This program implements the Hasmi Shogi Game Variant 1.
 
-from typing import List, Dict, Callable, Union, Tuple, Any
+from typing import List, Dict, Callable, Union, Tuple, Any, Set
 import sys, time, random, pygame as pg
 from pygame import Surface
 
@@ -711,10 +711,56 @@ class AI:
                 curr_moves.append(board.ai_possible_moves(piece))
         return curr_moves
 
-    def _set_possible_moves_fen(self, board: str, curr_pieces: Tuple[List[Tuple[int]]]):
-        pass
+    def _set_possible_moves_fen(self, curr_pieces: Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]):
+        player, opponent = curr_pieces
+        print(f'Player: {player}\nOpponent: {opponent}')
+        possible_moves = {}
+        for piece in player:
+            rank, file = piece
+            above = True
+            possible_moves[piece] = []
+            for i in range(1, 10):
+                added = 0
+                if i == rank:
+                    above = False
+                    continue
 
-    def find_curr_pieces(self, board: str) -> Tuple[List[Tuple[int]]]:
+                possible = (i, file)
+                if possible not in player and possible not in opponent:
+                    possible_moves[piece].append(possible)
+                    added += 1
+                else:
+                    if above:
+                        if added:
+                            for _ in range(1, i):
+                                possible_moves[piece].pop()
+                                added -= 1
+                    else:
+                        break
+
+            added = 0
+            left = True
+            for j in range(1, 10):
+                if j == file:
+                    left = False
+                    continue
+
+                possible = (rank, j)
+                if possible not in player and possible not in opponent:
+                    possible_moves[piece].append(possible)
+                    added += 1
+                else:
+                    if left:
+                        if added:
+                            for _ in range(1, j):
+                                possible_moves[piece].pop()
+                                added -= 1
+                    else:
+                        break
+        print(f'Possible: {possible_moves}')
+        return possible_moves
+
+    def find_curr_pieces(self, board: str) -> Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]:
         """TODO"""
         if self._player == "RED":
             player = 'R'
@@ -723,22 +769,41 @@ class AI:
             player = 'B'
             opponent = 'R'
 
-        player_pieces = []
-        opponent_pieces = []
+        player_pieces = set()
+        opponent_pieces = set()
         rows = board.split('/')
         for rank in range(len(rows)):
             file = 0
             for char in rows[rank]:
                 if char == player:
-                    player_pieces.append((rank+1, file+1))
+                    player_pieces.add((rank+1, file+1))
                     file += 1
                 elif char == opponent:
-                    opponent_pieces.append((rank+1, file+1))
+                    opponent_pieces.add((rank+1, file+1))
                     file += 1
                 else:
                     file += int(char)
 
         return player_pieces, opponent_pieces
+
+    def pick_move_fen(self, board: str) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        self._turn += 1
+        possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(board))
+        starts = list(possible_moves.keys())
+        best_start = starts[random.randint(0, len(starts)-1)]
+        best_end = possible_moves[best_start][random.randint(0, len(possible_moves[best_start])-1)]
+        max_score = -1000
+        if self._turn < 3:
+            return best_start, best_end
+
+        for start in possible_moves.keys():
+            for end in possible_moves[start]:
+                eval = self.minimax_fen(board, [start, end], 1, -1000, 1000, True)
+                if eval > max_score:
+                    max_score = eval
+                    best_start, best_end = start, end
+
+        return best_start, best_end
 
     def pick_move(self, board: 'Board') -> Tuple['Square', 'Square']:
         """Picks a move for the AI to play"""
@@ -759,6 +824,9 @@ class AI:
                     max_score = eval
                     best_start, best_end = start, end
         return best_start, best_end
+
+    def minimax_fen(self, board: str, position: List[Tuple[int, int]], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
+        pass
 
     def minimax(self, board: str, position: List['Square'], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
         """TODO"""
