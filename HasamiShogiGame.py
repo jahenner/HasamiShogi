@@ -3,7 +3,7 @@
 # Description: This program implements the Hasmi Shogi Game Variant 1.
 
 from typing import List, Dict, Callable, Union, Tuple, Any
-import sys, random, pygame as pg
+import sys, time, random, pygame as pg
 from pygame import Surface
 
 WIDTH, HEIGHT = 750, 820
@@ -331,7 +331,7 @@ class Board:
             open_score += self._left_open_pieces(location, Square.get_left, Square.get_right)
             open_score += self._left_open_pieces(location, Square.get_top, Square.get_bottom)
 
-        return (open_score // opponent_pieces) + pieces_score + random.randint(-3, 3)
+        return (open_score // (opponent_pieces+1)) + pieces_score + random.randint(-4, 4)
 
     def occupant(self, rank: int, file: int) -> 'Square':
         """returns the Square Object that is on the rank and file location"""
@@ -962,7 +962,7 @@ def title_screen() -> None:
 
 def play_game(win, selection) -> None:
     """plays the Hasami Shogi Game"""
-    random.seed("Shogi")
+    random.seed()
     game = HasamiShogiGame(win)
     from_piece = None
     if selection == 0 or selection == 2:      # if 1 player was selected
@@ -1003,28 +1003,60 @@ def play_game(win, selection) -> None:
 
             # It is the AI's turn
             else:
+                begin = time.time()
                 if game.get_active_player() == "RED":
                     from_location, to_location = ai_red.pick_move(game.get_board())
-                    print(f'Selection: {from_location.get_location(), to_location.get_location()}')
+                    print(f'Red\'s selection: {from_location.get_location(), to_location.get_location()}')
                     game.ai_make_move(from_location, to_location)
                     print(game.get_board().generate_fen())
+                    game.get_board().print_board()
                 else:
                     from_location, to_location = ai_black.pick_move(game.get_board())
-                    print(f'Selection: {from_location.get_location(), to_location.get_location()}')
+                    print(f'Black\'s selection: {from_location.get_location(), to_location.get_location()}')
                     game.ai_make_move(from_location, to_location)
                     print(game.get_board().generate_fen())
+                    game.get_board().print_board()
+                end = time.time()
+                print(end - begin)
 
-        window_update(win, game)
-        pg.display.update()
+        # window_update(win, game)
+        # pg.display.update()
 
 
 if __name__ == "__main__":
-    title_screen()
-    pg.quit()
-    # pg.init()
-    # width = 750
-    # height = 820
-    # win = pg.display.set_mode((width, height))
-    # curr = Board(win, "9/5RRRR/RR1R1B3/4RBBB1/9/9/9/9/2R6")
-    # curr.print_board()
+    # title_screen()
     # pg.quit()
+
+    pg.init()
+    width = 750
+    height = 820
+    win = pg.display.set_mode((width, height))
+    game = HasamiShogiGame(win)
+    rank = "Xabcdefghi"
+    ai_red = AI(win, game, "RED")
+    ai_black = AI(win, game, "BLACK")
+    turn = 0
+    start = time.time()
+    while game.get_game_state() == "UNFINISHED":
+        turn += 1
+        begin = time.time()
+        if game.get_active_player() == "RED":
+            from_location, to_location = ai_red.pick_move(game.get_board())
+        else:
+            from_location, to_location = ai_black.pick_move(game.get_board())
+
+        from_rank, from_file = from_location.get_location()
+        to_rank, to_file = to_location.get_location()
+        from_rank, to_rank = rank[from_rank], rank[to_rank]
+        from_file, to_file = str(from_file), str(to_file)
+
+        print(f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
+        game.ai_make_move(from_location, to_location)
+        print(game.get_board().count_pieces())
+        print(game.get_board().generate_fen())
+        game.get_board().print_board()
+        end = time.time()
+        print(f'Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
+
+    print(game.get_game_state())
+    pg.quit()
