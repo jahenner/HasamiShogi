@@ -711,6 +711,35 @@ class AI:
                 curr_moves.append(board.ai_possible_moves(piece))
         return curr_moves
 
+    def _set_possible_moves_fen(self, board: str, curr_pieces: Tuple[List[Tuple[int]]]):
+        pass
+
+    def find_curr_pieces(self, board: str) -> Tuple[List[Tuple[int]]]:
+        """TODO"""
+        if self._player == "RED":
+            player = 'R'
+            opponent = 'B'
+        else:
+            player = 'B'
+            opponent = 'R'
+
+        player_pieces = []
+        opponent_pieces = []
+        rows = board.split('/')
+        for rank in range(len(rows)):
+            file = 0
+            for char in rows[rank]:
+                if char == player:
+                    player_pieces.append((rank+1, file+1))
+                    file += 1
+                elif char == opponent:
+                    opponent_pieces.append((rank+1, file+1))
+                    file += 1
+                else:
+                    file += int(char)
+
+        return player_pieces, opponent_pieces
+
     def pick_move(self, board: 'Board') -> Tuple['Square', 'Square']:
         """Picks a move for the AI to play"""
         self._turn += 1
@@ -789,7 +818,7 @@ def top_bar(win: Union["Surface", "SurfaceType"], game: HasamiShogiGame) -> None
     player_text = font.render(game.get_active_player(), True, color)
     win.blit(
         player_text,
-        ((win.get_width() - player_text.get_width()) // 2, 15)
+        ((win.get_width() - player_text.get_width()) // 3, 15)
     )
     # Display the total number of pieces for Black
     font = pg.font.SysFont(None, 40)
@@ -892,7 +921,7 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
             (0, 255, 0),
             pg.Rect(
                 (win.get_width() - two_players.get_width()) // 2 - 10,
-                (win.get_height() + two_players.get_height() + one_player.get_height()) // 3 - 10,
+                (win.get_height() - one_player.get_height()) // 3 + two_players.get_height() + 10,
                 two_players.get_width() + 20,
                 two_players.get_height() + 20
             ),
@@ -904,7 +933,7 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
             (0, 255, 0),
             pg.Rect(
                 (win.get_width() - ai_play.get_width()) // 2 - 10,
-                (win.get_height() + two_players.get_height() + one_player.get_height() + ai_play.get_height()) // 3 - 10,
+                (win.get_height() - one_player.get_height()) // 3 + two_players.get_height() + ai_play.get_height() + 30,
                 ai_play.get_width() + 20,
                 ai_play.get_height() + 20
             ),
@@ -923,7 +952,7 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
         two_players,
         (
             (win.get_width() - two_players.get_width()) // 2,
-            (win.get_height() + two_players.get_height() + one_player.get_height()) // 3
+            (win.get_height() - one_player.get_height()) // 3 + two_players.get_height() + 20
         )
     )
 
@@ -931,7 +960,7 @@ def title_update(win: Union["Surface", "SurfaceType"], selection: int = 0) -> No
         ai_play,
         (
             (win.get_width() - ai_play.get_width()) // 2,
-            (win.get_height() + two_players.get_height() + one_player.get_height() + ai_play.get_height()) // 3
+            (win.get_height() - one_player.get_height()) // 3 + two_players.get_height() + ai_play.get_height() + 40
         )
     )
 
@@ -1019,14 +1048,10 @@ def play_game(win, selection) -> None:
                 end = time.time()
                 print(end - begin)
 
-        # window_update(win, game)
-        # pg.display.update()
+        window_update(win, game)
+        pg.display.update()
 
-
-if __name__ == "__main__":
-    # title_screen()
-    # pg.quit()
-
+def terminal():
     pg.init()
     width = 750
     height = 820
@@ -1050,13 +1075,24 @@ if __name__ == "__main__":
         from_rank, to_rank = rank[from_rank], rank[to_rank]
         from_file, to_file = str(from_file), str(to_file)
 
-        print(f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
+        print(
+            f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
         game.ai_make_move(from_location, to_location)
         print(game.get_board().count_pieces())
         print(game.get_board().generate_fen())
         game.get_board().print_board()
         end = time.time()
-        print(f'Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
+        print(
+            f'Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
 
     print(game.get_game_state())
     pg.quit()
+
+
+if __name__ == "__main__":
+    title_screen()
+    pg.quit()
+
+    # terminal()
+
+
