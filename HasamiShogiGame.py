@@ -1,7 +1,7 @@
 # Name: Alex Henner
 # Date: 11/12/21
 # Description: This program implements the Hasmi Shogi Game Variant 1.
-
+import json
 from typing import List, Dict, Callable, Union, Tuple, Any, Set
 import sys, time, random, pygame as pg
 from pygame import Surface
@@ -118,6 +118,7 @@ class HasamiShogiGame:
         to_piece = self._board.occupant(to_location[0]-1, to_location[1]-1)
         self._board.ai_move(from_piece, to_piece)
         self._board.capture_pieces(to_piece)
+        to_piece.set_is_possible(True)
         self._update_game()
 
     def _update_game(self) -> None:
@@ -399,8 +400,9 @@ class Board:
         if direction_1(piece).get_piece() != piece.get_piece() and direction_2(piece).get_piece() != piece.get_piece():
             piece.set_piece("NONE")
 
-    def _left_open_pieces(self, piece: 'Square', direction_1: Callable, direction_2: Callable) -> int:
-        """If want to implement self capture, but needs to be reimplemented in _capture_pieces"""
+    @staticmethod
+    def _left_open_pieces(piece: 'Square', direction_1: Callable, direction_2: Callable) -> int:
+        """TODO"""
         flag = False
         captured_pieces: List['Square'] = []
         curr_piece = piece.get_piece()
@@ -707,9 +709,19 @@ class AI:
         self._opponent = "BLACK" if self._player == "RED" else "RED"
         self._board = None
         self._turn = 0
+        if self._player == "RED":
+            with open("red_moves.json", 'r') as inFile:
+                self._memorize = json.load(inFile)
+        else:
+            with open("black_moves.json", 'r') as inFile:
+                self._memorize = json.load(inFile)
+        # self._memorize = {}
 
     def get_player(self):
         return self._player
+
+    def get_mem_moves(self):
+        return self._memorize
 
     @staticmethod
     def _set_possible_moves(board: 'Board', curr_pieces: List['Square']) -> List[List[Any]]:
@@ -790,9 +802,11 @@ class AI:
         possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(board, player))
         starts = list(possible_moves.keys())
         best_start = starts[random.randint(0, len(starts)-1) if len(starts) > 1 else 0]
+        while not possible_moves[best_start]:
+            best_start = starts[random.randint(0, len(starts) - 1) if len(starts) > 1 else 0]
         best_end = possible_moves[best_start][random.randint(0, len(possible_moves[best_start])-1) if len(possible_moves[best_start]) > 1 else 0]
         max_score = -1000
-        if self._turn < 3:
+        if self._turn < 2:
             return best_start, best_end
 
         for start in possible_moves.keys():
@@ -839,17 +853,261 @@ class AI:
         to_row = self._expand_row(rows[to_location[0]-1])
         to_row = self._replace_position(to_row, to_location[1]-1, replacement)
         rows[to_location[0]-1] = self._collapse_row(to_row)
-        rows = self._capture(rows, to_location)
+        self._capture(rows, to_location)
         return '/'.join(rows)
 
-    def _capture(self, board: List[str], location: Tuple[int, int]) -> List[str]:
-        return board
+    def _capture_corners(self, board: List[str], player: str, opponent: str) -> None:
+        # top left
+        if board[0][0] == opponent and board[0][1] == player and board[1][0] == player:
+            board[0] = self._replace_position(board[0], 0, '.')
 
-    def _won(self, board: str) -> bool:
+        # top right
+        if board[0][8] == opponent and board[0][7] == player and board[1][8] == player:
+            board[0] = self._replace_position(board[0], 8, '.')
+
+        # bottom left
+        if board[8][0] == opponent and board[7][0] == player and board[8][1] == player:
+            board[8] = self._replace_position(board[8], 0, '.')
+
+        # bottom right
+        if board[8][8] == opponent and board[7][8] == player and board[8][7] == player:
+            board[8] = self._replace_position(board[8], 8, '.')
+
+    def _capture_pieces(self, board: List[str], captures: List[Tuple[int, int]]) -> None:
+        for piece in captures:
+            board[piece[0]] = self._replace_position(board[piece[0]], piece[1], '.')
+
+    def _capture_directions(self, board: List[str], location: Tuple[int, int], player: str) -> None:
+        rank, file = [pos-1 for pos in location]
+        capture_pieces = []
+        # above
+        if rank > 0:
+            for row in range(rank-1, -1, -1):
+                if board[row][file] == '.':
+                    break
+                if board[row][file] == player:
+                    self._capture_pieces(board, capture_pieces)
+                else:
+                    capture_pieces.append((row, file))
+
+        # below
+        capture_pieces.clear()
+        if rank < 8:
+            for row in range(rank+1, 9):
+                if board[row][file] == '.':
+                    break
+                if board[row][file] == player:
+                    self._capture_pieces(board, capture_pieces)
+                else:
+                    capture_pieces.append((row, file))
+
+        # left
+        capture_pieces.clear()
+        if file > 0:
+            for col in range(file-1, -1, -1):
+                if board[rank][col] == '.':
+                    break
+                if board[rank][col] == player:
+                    self._capture_pieces(board, capture_pieces)
+                else:
+                    capture_pieces.append((rank, col))
+
+                # left
+                capture_pieces.clear()
+                if file < 8:
+                    for col in range(file + 1, 9):
+                        if board[rank][col] == '.':
+                            break
+                        if board[rank][col] == player:
+                            self._capture_pieces(board, capture_pieces)
+                        else:
+                            capture_pieces.append((rank, col))
+
+    def _capture(self, board: List[str], location: Tuple[int, int]) -> None:
+        for i in range(len(board)):
+            board[i] = self._expand_row(board[i])
+
+        player = board[location[0]-1][location[1]-1]
+        if player == 'B':
+            opponent = 'R'
+        else:
+            opponent = 'B'
+
+        self._capture_corners(board, player, opponent)
+        self._capture_directions(board, location, player)
+
+        for i in range(len(board)):
+            board[i] = self._collapse_row(board[i])
+
+    @staticmethod
+    def _won(board: str) -> bool:
+        red = board.count('R')
+        black = board.count('B')
+        if red <= 1 or black <= 1:
+            return True
         return False
 
-    def _evaluate(self, new_board: str, old_board: str) -> int:
-        return 1
+    @staticmethod
+    def _surround_score(player: str, opponent: str, board: List[str]) -> int:
+        above = 0
+        for i in range(9):
+            if opponent in board[i]:
+                break
+            above += board[i].count(player)
+        below = 0
+        for i in range(8, -1, -1):
+            if opponent in board[i]:
+                break
+            below += board[i].count(player)
+
+        left = 0
+        for col in range(9):
+            flag = False
+            for row in range(9):
+                count = 0
+                if board[row][col] == opponent:
+                    flag = True
+                    break
+                if board[row][col] == player:
+                    count += 1
+            if flag:
+                break
+            left += count
+
+        right = 0
+        for col in range(8, -1, -1):
+            flag = False
+            for row in range(9):
+                count = 0
+                if board[row][col] == opponent:
+                    flag = True
+                    break
+                if board[row][col] == player:
+                    count += 1
+            if flag:
+                break
+            right += count
+
+        return min(above, below) * 2 + min(left, right) * 2
+
+    def _open_score(self, player: str, opponent: str, location: Tuple[int, int], board: List[str]) -> int:
+        score = 0
+        # above
+        good_pieces = 0
+        bad_pieces = 0
+        open_flag = False
+        for row in range(location[0]-1, -1, -1):
+            if board[row][location[1]-1] == '.':
+                score -= bad_pieces
+                open_flag = True
+                break
+            if board[row][location[1]-1] == player:
+                bad_pieces += 1
+            else:
+                good_pieces += 1
+
+        if not open_flag:
+            score += good_pieces
+
+        # below
+        good_pieces = 0
+        bad_pieces = 0
+        open_flag = False
+        for row in range(location[0]+1, 9):
+            if board[row][location[1] - 1] == '.':
+                score -= bad_pieces
+                open_flag = True
+                break
+            if board[row][location[1] - 1] == player:
+                bad_pieces += 1
+            else:
+                good_pieces += 1
+
+        if not open_flag:
+            score += good_pieces
+
+        # left
+        good_pieces = 0
+        bad_pieces = 0
+        open_flag = False
+        for col in range(location[1]-1, -1, -1):
+            if board[location[0]-1][col] == '.':
+                score -= bad_pieces
+                open_flag = True
+                break
+            if board[location[0]-1][col] == player:
+                bad_pieces += 1
+            else:
+                good_pieces += 1
+
+        if not open_flag:
+            score += good_pieces
+
+        # right
+        good_pieces = 0
+        bad_pieces = 0
+        open_flag = False
+        for col in range(location[1] + 1, 9):
+            if board[location[0] - 1][col] == '.':
+                score -= bad_pieces
+                open_flag = True
+                break
+            if board[location[0] - 1][col] == player:
+                bad_pieces += 1
+            else:
+                good_pieces += 1
+
+        if not open_flag:
+            score += good_pieces
+
+        return score
+
+    def _evaluate(self, player: str, new_board: str, old_board: str) -> int:
+        if player == "RED":
+            player = 'R'
+            opponent = 'B'
+        else:
+            player = 'B'
+            opponent = 'R'
+        new_red = new_board.count('R')
+        new_black = new_board.count('B')
+        old_red = old_board.count('R')
+        old_black = old_board.count('B')
+
+        # expand the board
+        new_board = new_board.split('/')
+        for i in range(len(new_board)):
+            new_board[i] = self._expand_row(new_board[i])
+
+        pieces_score = 0
+        if player == 'R':
+            if new_black <= 1:
+                return 1000
+            if new_red <= 1:
+                return -1000
+            pieces_score += (old_black - new_black) * 10
+            pieces_score -= (old_red - new_red) * 10
+        else:
+            if new_black <= 1:
+                return -1000
+            if new_red <= 1:
+                return 1000
+            pieces_score -= (old_black - new_black) * 10
+            pieces_score += (old_red - new_red) * 10
+
+        surround_score = 0
+        surround_score += self._surround_score(player, opponent, new_board)
+        surround_score -= self._surround_score(opponent, player, new_board)
+
+        open_score = 0
+        for rank in range(len(new_board)):
+            for file in range(len(new_board[rank])):
+                if new_board[rank][file] == player:
+                    open_score += self._open_score(player, opponent, (rank, file), new_board)
+                if new_board[rank][file] == opponent:
+                    open_score -= self._open_score(opponent, player, (rank, file), new_board)
+
+        return pieces_score + surround_score + (open_score // (old_red if player == 'R' else old_black))
 
     @staticmethod
     def _replace_position(row: str, position: int, replacement: str):
@@ -893,7 +1151,7 @@ class AI:
         curr_board = self.update_board(board, position, player)
 
         if depth == 0 or self._won(curr_board):
-            return self._evaluate(curr_board, self._board)
+            return self._memorize.get(curr_board, self._evaluate(self._player, curr_board, self._board)) + random.randint(-5, 5)
 
         if maximizing_player:
             possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(curr_board, opponent))
@@ -984,7 +1242,7 @@ def top_bar(win: Union["Surface", "SurfaceType"], game: HasamiShogiGame) -> None
     player_text = font.render(game.get_active_player(), True, color)
     win.blit(
         player_text,
-        ((win.get_width() - player_text.get_width()) // 3, 15)
+        ((win.get_width() - player_text.get_width()) // 2, 15)
     )
     # Display the total number of pieces for Black
     font = pg.font.SysFont(None, 40)
@@ -1174,10 +1432,11 @@ def play_game(win, selection) -> None:
                 game = HasamiShogiGame(win)
 
             # Lets players click on pieces to move. Selection 1 means 2 players are playing
-            if game.get_active_player() == 'BLACK' and (selection == 1 or selection == 0):
+            if (game.get_active_player() == 'BLACK' and selection == 0) or selection == 1:
                 if pg.mouse.get_pressed()[0]:               # Left click
                     mouse = pg.mouse.get_pos()              # Get x and y position on screen
                     location = game.get_location(mouse)     # change position to square locations
+                    game.get_board().refresh_possible()
 
                     # Check if this is the first click and that the square clicked is current player piece
                     if game.get_initiate_move() and game.get_square_occupant(location) == game.get_active_player():
@@ -1198,21 +1457,47 @@ def play_game(win, selection) -> None:
 
             # It is the AI's turn
             else:
+                game.get_board().refresh_possible()
                 begin = time.time()
                 if game.get_active_player() == "RED":
-                    from_location, to_location = ai_red.pick_move(game.get_board())
-                    print(f'Red\'s selection: {from_location.get_location(), to_location.get_location()}')
-                    game.ai_make_move(from_location, to_location)
-                    print(game.get_board().generate_fen())
-                    game.get_board().print_board()
+                    from_location, to_location = ai_red.pick_move_fen(game.get_board().generate_fen(),
+                                                                      ai_red.get_player())
                 else:
-                    from_location, to_location = ai_black.pick_move(game.get_board())
-                    print(f'Black\'s selection: {from_location.get_location(), to_location.get_location()}')
-                    game.ai_make_move(from_location, to_location)
-                    print(game.get_board().generate_fen())
-                    game.get_board().print_board()
+                    from_location, to_location = ai_black.pick_move_fen(game.get_board().generate_fen(),
+                                                                        ai_black.get_player())
+
+                from_rank, from_file = from_location
+                to_rank, to_file = to_location
+                from_rank, to_rank = "Xabcdefghi"[from_rank], "Xabcdefghi"[to_rank]
+                from_file, to_file = str(from_file), str(to_file)
+
+                print(
+                    f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
+                game.ai_make_move_fen(from_location, to_location)
+                # print(game.get_board().count_pieces())
+                print(game.get_board().generate_fen())
+                # game.get_board().print_board()
                 end = time.time()
-                print(end - begin)
+                print(f'Selection Time:{end - begin}')
+
+                # begin = time.time()
+                # game.get_board().refresh_possible()
+                # if game.get_active_player() == "RED":
+                #     from_location, to_location = ai_red.pick_move(game.get_board())
+                #     print(f'Red\'s selection: {from_location.get_location(), to_location.get_location()}')
+                #     game.ai_make_move(from_location, to_location)
+                #     to_location.set_is_possible(True)
+                #     print(game.get_board().generate_fen())
+                #     game.get_board().print_board()
+                # else:
+                #     from_location, to_location = ai_black.pick_move(game.get_board())
+                #     print(f'Black\'s selection: {from_location.get_location(), to_location.get_location()}')
+                #     game.ai_make_move(from_location, to_location)
+                #     to_location.set_is_possible(True)
+                #     print(game.get_board().generate_fen())
+                #     game.get_board().print_board()
+                # end = time.time()
+                # print(end - begin)
 
         window_update(win, game)
         pg.display.update()
@@ -1221,44 +1506,51 @@ def terminal():
     pg.init()
     width = 750
     height = 820
-    win = pg.display.set_mode((width, height))
-    game = HasamiShogiGame(win)
-    rank = "Xabcdefghi"
-    ai_red = AI(win, game, "RED")
-    ai_black = AI(win, game, "BLACK")
-    turn = 0
-    start = time.time()
-    while game.get_game_state() == "UNFINISHED":
-        turn += 1
-        begin = time.time()
-        if game.get_active_player() == "RED":
-            from_location, to_location = ai_red.pick_move_fen(game.get_board().generate_fen(), ai_red.get_player())
-        else:
-            from_location, to_location = ai_black.pick_move_fen(game.get_board().generate_fen(), ai_black.get_player())
+    iterations = 1
+    while iterations <= 10:
+        win = pg.display.set_mode((width, height))
+        game = HasamiShogiGame(win)
+        rank = "Xabcdefghi"
+        ai_red = AI(win, game, "RED")
+        ai_black = AI(win, game, "BLACK")
+        turn = 0
+        start = time.time()
+        while game.get_game_state() == "UNFINISHED" and turn < 25:
+            turn += 1
+            begin = time.time()
+            if game.get_active_player() == "RED":
+                from_location, to_location = ai_red.pick_move_fen(game.get_board().generate_fen(), ai_red.get_player())
+            else:
+                from_location, to_location = ai_black.pick_move_fen(game.get_board().generate_fen(), ai_black.get_player())
 
-        from_rank, from_file = from_location
-        to_rank, to_file = to_location
-        from_rank, to_rank = rank[from_rank], rank[to_rank]
-        from_file, to_file = str(from_file), str(to_file)
+            from_rank, from_file = from_location
+            to_rank, to_file = to_location
+            from_rank, to_rank = rank[from_rank], rank[to_rank]
+            from_file, to_file = str(10 - from_file), str(10 - to_file)
 
-        print(
-            f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
-        game.ai_make_move_fen(from_location, to_location)
-        print(game.get_board().count_pieces())
-        print(game.get_board().generate_fen())
-        game.get_board().print_board()
-        end = time.time()
-        print(
-            f'Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
+            print(
+                f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
+            game.ai_make_move_fen(from_location, to_location)
+            print(game.get_board().count_pieces())
+            print(game.get_board().generate_fen())
+            game.get_board().print_board()
+            end = time.time()
+            print(
+                f'Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
+        with open("red_moves.json", "w") as outfile:
+            json.dump(ai_red.get_mem_moves(), outfile, indent=3)
 
-    print(game.get_game_state())
+        with open("black_moves.json", "w") as outfile:
+            json.dump(ai_black.get_mem_moves(), outfile, indent=3)
+        print(game.get_game_state())
+        iterations += 1
     pg.quit()
 
 
 if __name__ == "__main__":
-    title_screen()
-    pg.quit()
+    # title_screen()
+    # pg.quit()
 
-    # terminal()
+    terminal()
 
 
