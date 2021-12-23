@@ -113,6 +113,13 @@ class HasamiShogiGame:
         self._board.capture_pieces(self._board.occupant(*[location - 1 for location in to_location.get_location()]))
         self._update_game()
 
+    def ai_make_move_fen(self, from_location: Tuple[int, int], to_location: Tuple[int, int]) -> None:
+        from_piece = self._board.occupant(from_location[0]-1, from_location[1]-1)
+        to_piece = self._board.occupant(to_location[0]-1, to_location[1]-1)
+        self._board.ai_move(from_piece, to_piece)
+        self._board.capture_pieces(to_piece)
+        self._update_game()
+
     def _update_game(self) -> None:
         """Checks for a winner of the game and changes whose turn it is"""
         # change whose turn it is
@@ -701,6 +708,9 @@ class AI:
         self._board = None
         self._turn = 0
 
+    def get_player(self):
+        return self._player
+
     @staticmethod
     def _set_possible_moves(board: 'Board', curr_pieces: List['Square']) -> List[List[Any]]:
         """Finds all possible moves for this turn"""
@@ -711,58 +721,46 @@ class AI:
                 curr_moves.append(board.ai_possible_moves(piece))
         return curr_moves
 
-    def _set_possible_moves_fen(self, curr_pieces: Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]):
+    @staticmethod
+    def _set_possible_moves_fen(curr_pieces: Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]):
         player, opponent = curr_pieces
-        print(f'Player: {player}\nOpponent: {opponent}')
+        # print(f'Player: {player}\nOpponent: {opponent}')
         possible_moves = {}
         for piece in player:
             rank, file = piece
-            above = True
             possible_moves[piece] = []
-            for i in range(1, 10):
-                added = 0
-                if i == rank:
-                    above = False
-                    continue
-
+            for i in range(rank+1, 10):
                 possible = (i, file)
                 if possible not in player and possible not in opponent:
                     possible_moves[piece].append(possible)
-                    added += 1
                 else:
-                    if above:
-                        if added:
-                            for _ in range(1, i):
-                                possible_moves[piece].pop()
-                                added -= 1
-                    else:
-                        break
-
-            added = 0
-            left = True
-            for j in range(1, 10):
-                if j == file:
-                    left = False
-                    continue
-
+                    break
+            for i in range(rank-1, 0, -1):
+                possible = (i, file)
+                if possible not in player and possible not in opponent:
+                    possible_moves[piece].append(possible)
+                else:
+                    break
+            for j in range(file+1, 10):
                 possible = (rank, j)
                 if possible not in player and possible not in opponent:
                     possible_moves[piece].append(possible)
-                    added += 1
                 else:
-                    if left:
-                        if added:
-                            for _ in range(1, j):
-                                possible_moves[piece].pop()
-                                added -= 1
-                    else:
-                        break
-        print(f'Possible: {possible_moves}')
+                    break
+            for j in range(file-1, 0, -1):
+                possible = (rank, j)
+                if possible not in player and possible not in opponent:
+                    possible_moves[piece].append(possible)
+                else:
+                    break
+
+        # print(f'Possible: {possible_moves}')
         return possible_moves
 
-    def find_curr_pieces(self, board: str) -> Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]:
+    @staticmethod
+    def find_curr_pieces(board: str, player: str) -> Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]:
         """TODO"""
-        if self._player == "RED":
+        if player == "RED":
             player = 'R'
             opponent = 'B'
         else:
@@ -786,19 +784,20 @@ class AI:
 
         return player_pieces, opponent_pieces
 
-    def pick_move_fen(self, board: str) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+    def pick_move_fen(self, board: str, player: str) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         self._turn += 1
-        possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(board))
+        self._board = board
+        possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(board, player))
         starts = list(possible_moves.keys())
-        best_start = starts[random.randint(0, len(starts)-1)]
-        best_end = possible_moves[best_start][random.randint(0, len(possible_moves[best_start])-1)]
+        best_start = starts[random.randint(0, len(starts)-1) if len(starts) > 1 else 0]
+        best_end = possible_moves[best_start][random.randint(0, len(possible_moves[best_start])-1) if len(possible_moves[best_start]) > 1 else 0]
         max_score = -1000
         if self._turn < 3:
             return best_start, best_end
 
         for start in possible_moves.keys():
             for end in possible_moves[start]:
-                eval = self.minimax_fen(board, [start, end], 1, -1000, 1000, True)
+                eval = self.minimax_fen(board, [start, end], 2, -1000, 1000, True)
                 if eval > max_score:
                     max_score = eval
                     best_start, best_end = start, end
@@ -825,8 +824,107 @@ class AI:
                     best_start, best_end = start, end
         return best_start, best_end
 
+    def update_board(self, board: str, position: List[Tuple[int, int]], player: str) -> str:
+        if player == "BLACK":
+            replacement = 'B'
+        else:
+            replacement = 'R'
+
+        rows = board.split('/')
+        from_location, to_location = position
+        from_row = self._expand_row(rows[from_location[0]-1])
+        from_row = self._replace_position(from_row, from_location[1]-1, '.')
+        rows[from_location[0]-1] = self._collapse_row(from_row)
+
+        to_row = self._expand_row(rows[to_location[0]-1])
+        to_row = self._replace_position(to_row, to_location[1]-1, replacement)
+        rows[to_location[0]-1] = self._collapse_row(to_row)
+        rows = self._capture(rows, to_location)
+        return '/'.join(rows)
+
+    def _capture(self, board: List[str], location: Tuple[int, int]) -> List[str]:
+        return board
+
+    def _won(self, board: str) -> bool:
+        return False
+
+    def _evaluate(self, new_board: str, old_board: str) -> int:
+        return 1
+
+    @staticmethod
+    def _replace_position(row: str, position: int, replacement: str):
+        return row[:position] + replacement + row[position+1:]
+
+    @staticmethod
+    def _expand_row(row: str) -> str:
+        output = ''
+        for char in row:
+            if char.isalpha():
+                output += char
+            else:
+                for _ in range(int(char)):
+                    output += '.'
+        return output
+
+    @staticmethod
+    def _collapse_row(row: str) -> str:
+        output = ''
+        location = 0
+        while location < len(row):
+            if row[location].isalpha():
+                output += row[location]
+            else:
+                dot = 1
+                while location + 1 != len(row) and row[location + 1] == '.':
+                    dot += 1
+                    location += 1
+                output += str(dot)
+            location += 1
+        return output
+
     def minimax_fen(self, board: str, position: List[Tuple[int, int]], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
-        pass
+        if self._player == "RED":
+            player = "RED"
+            opponent = "BLACK"
+        else:
+            player = "BLACK"
+            opponent = "RED"
+
+        curr_board = self.update_board(board, position, player)
+
+        if depth == 0 or self._won(curr_board):
+            return self._evaluate(curr_board, self._board)
+
+        if maximizing_player:
+            possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(curr_board, opponent))
+            maxEval = -1000
+            flag = False
+            for start in possible_moves.keys():
+                for end in possible_moves[start]:
+                    eval = self.minimax_fen(curr_board, [start, end], depth-1, alpha, beta, False)
+                    maxEval = max(maxEval, eval)
+                    alpha = max(alpha, eval)
+                    if beta <= alpha:
+                        flag = True
+                        break
+                if flag:
+                    break
+            return maxEval
+        else:
+            possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(curr_board, player))
+            minEval = 1000
+            flag = False
+            for start in possible_moves.keys():
+                for end in possible_moves[start]:
+                    eval = self.minimax_fen(curr_board, [start, end], depth - 1, alpha, beta, True)
+                    minEval = min(minEval, eval)
+                    beta = min(beta, eval)
+                    if beta <= alpha:
+                        flag = True
+                        break
+                if flag:
+                    break
+            return minEval
 
     def minimax(self, board: str, position: List['Square'], depth: int, alpha: int, beta: int, maximizing_player: bool) -> int:
         """TODO"""
@@ -1134,18 +1232,18 @@ def terminal():
         turn += 1
         begin = time.time()
         if game.get_active_player() == "RED":
-            from_location, to_location = ai_red.pick_move(game.get_board())
+            from_location, to_location = ai_red.pick_move_fen(game.get_board().generate_fen(), ai_red.get_player())
         else:
-            from_location, to_location = ai_black.pick_move(game.get_board())
+            from_location, to_location = ai_black.pick_move_fen(game.get_board().generate_fen(), ai_black.get_player())
 
-        from_rank, from_file = from_location.get_location()
-        to_rank, to_file = to_location.get_location()
+        from_rank, from_file = from_location
+        to_rank, to_file = to_location
         from_rank, to_rank = rank[from_rank], rank[to_rank]
         from_file, to_file = str(from_file), str(to_file)
 
         print(
             f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
-        game.ai_make_move(from_location, to_location)
+        game.ai_make_move_fen(from_location, to_location)
         print(game.get_board().count_pieces())
         print(game.get_board().generate_fen())
         game.get_board().print_board()
