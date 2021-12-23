@@ -806,7 +806,7 @@ class AI:
             best_start = starts[random.randint(0, len(starts) - 1) if len(starts) > 1 else 0]
         best_end = possible_moves[best_start][random.randint(0, len(possible_moves[best_start])-1) if len(possible_moves[best_start]) > 1 else 0]
         max_score = -1000
-        if self._turn < 2:
+        if self._turn < 1:
             return best_start, best_end
 
         for start in possible_moves.keys():
@@ -1418,6 +1418,7 @@ def play_game(win, selection) -> None:
     random.seed()
     game = HasamiShogiGame(win)
     from_piece = None
+    cycles = 0
     if selection == 0 or selection == 2:      # if 1 player was selected
         ai_red = AI(win, game, "RED")
         ai_black = AI(win, game, "BLACK")
@@ -1457,28 +1458,30 @@ def play_game(win, selection) -> None:
 
             # It is the AI's turn
             else:
-                game.get_board().refresh_possible()
-                begin = time.time()
-                if game.get_active_player() == "RED":
-                    from_location, to_location = ai_red.pick_move_fen(game.get_board().generate_fen(),
-                                                                      ai_red.get_player())
-                else:
-                    from_location, to_location = ai_black.pick_move_fen(game.get_board().generate_fen(),
-                                                                        ai_black.get_player())
+                if cycles % 60 == 0:
+                    game.get_board().refresh_possible()
+                    begin = time.time()
+                    if game.get_active_player() == "RED":
+                        from_location, to_location = ai_red.pick_move_fen(game.get_board().generate_fen(),
+                                                                          ai_red.get_player())
+                    else:
+                        from_location, to_location = ai_black.pick_move_fen(game.get_board().generate_fen(),
+                                                                            ai_black.get_player())
 
-                from_rank, from_file = from_location
-                to_rank, to_file = to_location
-                from_rank, to_rank = "Xabcdefghi"[from_rank], "Xabcdefghi"[to_rank]
-                from_file, to_file = str(from_file), str(to_file)
+                    from_rank, from_file = from_location
+                    to_rank, to_file = to_location
+                    from_rank, to_rank = "Xabcdefghi"[from_rank], "Xabcdefghi"[to_rank]
+                    from_file, to_file = str(from_file), str(to_file)
 
-                print(
-                    f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
-                game.ai_make_move_fen(from_location, to_location)
-                # print(game.get_board().count_pieces())
-                print(game.get_board().generate_fen())
-                # game.get_board().print_board()
-                end = time.time()
-                print(f'Selection Time:{end - begin}')
+                    print(
+                        f'{game.get_active_player().lower().capitalize()}\'s selection: {from_rank + from_file} -> {to_rank + to_file}')
+                    game.ai_make_move_fen(from_location, to_location)
+                    # print(game.get_board().count_pieces())
+                    print(game.get_board().generate_fen())
+                    # game.get_board().print_board()
+                    end = time.time()
+                    print(f'Selection Time:{end - begin}')
+                cycles += 1
 
                 # begin = time.time()
                 # game.get_board().refresh_possible()
@@ -1502,12 +1505,14 @@ def play_game(win, selection) -> None:
         window_update(win, game)
         pg.display.update()
 
+
 def terminal():
     pg.init()
     width = 750
     height = 820
     iterations = 1
-    while iterations <= 10:
+    avg_times = []
+    while iterations <= 15:
         win = pg.display.set_mode((width, height))
         game = HasamiShogiGame(win)
         rank = "Xabcdefghi"
@@ -1533,17 +1538,20 @@ def terminal():
             game.ai_make_move_fen(from_location, to_location)
             print(game.get_board().count_pieces())
             print(game.get_board().generate_fen())
-            game.get_board().print_board()
+            # game.get_board().print_board()
             end = time.time()
             print(
-                f'Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
+                f'Iteration: {iterations}, Turn: {turn}, Selection Time:{end - begin}, Total Time: {int((end - start) // 60)}:{(end - start) % 60}')
         with open("red_moves.json", "w") as outfile:
             json.dump(ai_red.get_mem_moves(), outfile, indent=3)
 
         with open("black_moves.json", "w") as outfile:
             json.dump(ai_black.get_mem_moves(), outfile, indent=3)
         print(game.get_game_state())
+        avg_times.append((end - begin) / turn)
         iterations += 1
+    for avg_time in avg_times:
+        print(round(avg_time, 4))
     pg.quit()
 
 
