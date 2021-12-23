@@ -1151,7 +1151,8 @@ class AI:
         curr_board = self.update_board(board, position, player)
 
         if depth == 0 or self._won(curr_board):
-            return self._memorize.get(curr_board, self._evaluate(self._player, curr_board, self._board)) + random.randint(-5, 5)
+            self._memorize[curr_board] = self._memorize.get(curr_board, self._evaluate(self._player, curr_board, self._board))
+            return self._memorize[curr_board] + random.randint(-5, 5)
 
         if maximizing_player:
             possible_moves = self._set_possible_moves_fen(self.find_curr_pieces(curr_board, opponent))
@@ -1548,7 +1549,7 @@ def terminal():
         with open("black_moves.json", "w") as outfile:
             json.dump(ai_black.get_mem_moves(), outfile, indent=3)
         print(game.get_game_state())
-        avg_times.append((end - begin) / turn)
+        avg_times.append((end - start) / turn)
         iterations += 1
     for avg_time in avg_times:
         print(round(avg_time, 4))
